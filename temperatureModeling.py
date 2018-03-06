@@ -21,10 +21,17 @@ import seaborn as sns
 # https://chrisalbon.com/machine_learning/linear_regression/linear_regression_scikitlearn/
 
 from sklearn import linear_model
-from sklearn.cross_validation import train_test_split
-from sklearn.model_selection import KFold, cross_val_score
-from sklearn import metrics
-import random
+# from sklearn.cross_validation import train_test_split
+# from sklearn.model_selection import KFold, cross_val_score
+# from sklearn import metrics
+# import random
+
+
+import statsmodels.api as sm
+from statsmodels.sandbox.regression.predstd import wls_prediction_std
+
+
+
 
 
 # import datasets
@@ -136,20 +143,76 @@ sns.regplot(x=climate_df['methane'], y=climate_df['anom_raw'], data=climate_df)
 X = climate_df['co2']
 y = climate_df['anom_raw']
 
-# use train/test split with different random_state values, producing different random splits
-X_train, X_test, y_train, y_test=train_test_split(X, y)
 
-# fit OLS model regressing the temperature anomaly onto the CO2 concentration
-ols = linear_model.LinearRegression()
-model = ols.fit(X_train.values.reshape(-1,1), y_train)
-print(model.coef_)
-print(model.intercept_)
-print(model.score(X_test.values.reshape(-1,1), y_test))
+
+# fit OLS model in sklearn regressing the temperature anomaly onto the CO2 concentration
+ols = linear_model.LinearRegression(fit_intercept=True)
+model_sk = ols.fit(X.values.reshape(-1,1), y)
+print(model_sk.coef_)
+print(model_sk.intercept_)
+
+
+
+
+
+# fit OLS model in statmodels regressing the temperature anomaly onto the CO2 concentration
+# be sure to use add_constant (not adding constant can make big difference to results)
+X_sm = sm.add_constant(X)  # add intercept to model (adds column of 1s to feature matrix)
+model_sm = sm.OLS(y, X_sm)
+results = model_sm.fit()
+print(results.summary())
+print('Parameters: ', results.params)
+print('R2: ', results.rsquared)
+print('Standard errors: ', results.bse)
+# print('Predicted values: ', results.predict())
+
+
+# show fit with confidence interval
+# adapted from example at http://www.statsmodels.org/dev/examples/notebooks/generated/ols.html
+
+
+# generating interpolation feature matrix to pass to results.predict for plotting
+
+X_min_floor = np.floor(X.values.min())
+X_max_ceiling =  np.ceil(X.values.max())
+X_dataRange_Series = pd.Series(np.linspace(X_min_floor, X_max_ceiling, num=(X_max_ceiling-X_min_floor+1))  
+const_Series = pd.Series(np.ones(len(X_dataRange)))
+X_dataRange_df = pd.DataFrame(dict(const = const_Series, dataRange = X_dataRange))
+
+
+# get confidence intervals for 
+prstd, iv_l, iv_u = wls_prediction_std(results)
+
+
+# plot data, interpolated linear fit and confidence intervals
+
+fig, ax = plt.subplots(figsize=(8,6))
+
+ax.plot(X.values, y.values, 'o', label="data")  # show the data points
+ax.plot(X_dataRange_df['dataRange'], results.predict(X_dataRange_df), 'r-', label="OLS")  
+ax.plot(X.values, iv_u, 'r--', label="CI")  # upper confidence interval
+ax.plot(X.values, iv_l, 'r--')  # lower confidence interval
+ax.legend(loc='best');
+
+
+
+
+# THERE IS DEBATE BUT OVERALL SEEMS CONSENSUS IS THAT THERE IS NO NEED TO DO TEST/TRAIN SPLIT
+# OR CROSS-VALIDATION WITH SIMPLE LINEAR REGRESSION 
+# BELOW: code to do train/test split and cross-validation of linear regression model in sklearn
+
+
+
+# use train/test split with different random_state values, producing different random splits
+# X_train, X_test, y_train, y_test=train_test_split(X, y)
+
+# print(model.score(X_test.values.reshape(-1,1), y_test))
 
 # ten-fold cross-validation
 # data needs to be shuffled before cross-validation because data pairs are ordered (because they are from timeseries)
-kf = KFold(n_splits=10, shuffle=True)
-scores = cross_val_score(model, X.values.reshape(-1,1), y, cv=kf)
-print(scores.mean())
+# kf = KFold(n_splits=10, shuffle=True)
+# scores = cross_val_score(model, X.values.reshape(-1,1), y, cv=kf)
+# print(scores.mean())
+
 
 
